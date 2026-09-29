@@ -7,8 +7,8 @@ Juego tipo Asteroids en HTML5 Canvas. **Toda la lógica está en `game.js`** (�
 - `npx serve .` → http://localhost:3000
 
 ## Hechos que hay que saber
-- **Canvas fijo 800×600**: `const W = 800; const H = 600;` en `game.js` (líneas 5–6) debe coincidir con los atributos `width`/`height` del `<canvas>` en `index.html` (línea 23). Si cambias uno, cambia el otro.
-- `game.js` se organiza por cabeceras de sección `// ── Nombre ──`, en este orden: `Input` → `Utils` → `Bullet` → `Asteroid` → `Ship` → `Partículas (explosión)` → `Estado del juego` → `Update` → `Draw` → `Loop principal`.
+- **Canvas fijo 800×600**: `const W = 800; const H = 600;` en `game.js` (líneas 5–6) debe coincidir con los atributos `width`/`height` del `<canvas>` en `index.html` (línea 23). Si cambias uno, cambia el otro. `game.js` tiene hoy ≈690 líneas (ES6, `'use strict'`).
+- `game.js` se organiza por cabeceras de sección `// ── Nombre ──`, en este orden: `Input` → `Utils` → `Fondo dinámico (espacio estrellado)` → `Bullet` → `Asteroid` → `Ship` → `Partículas (explosión)` → `Estado del juego` → `Update` → `Draw` → `Loop principal`.
 - Las entidades (`Bullet`, `Asteroid`, `Ship`, partículas) son clases con `update(dt)` / `draw()`; las marcadas como `dead` se filtran de sus arreglos en cada frame (no hay destrucción explícita de objetos).
 - Input: `keys[e.code]` para estado mantenido (ej. `keys['ArrowLeft']`) y `pressed(code)` para una sola pulsación (ej. disparo con `'Space'`); se usan `KeyboardEvent.code`, no `key`. Añadir controles nuevos siguiendo ese patrón.
 - La física usa `dt` (clamp a 0.05 s en el loop `requestAnimationFrame`): `ROT = 3.5`, `THRUST = 260`, `DRAG = 0.987`. El mundo es toroidal (`wrap()` en `Utils`).

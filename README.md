@@ -43,3 +43,5 @@ Luego visita `http://localhost:3000`.
 - 3 vidas con invencibilidad temporal al reaparecer (parpadeo)
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
+- Fondo dinámico: campo de estrellas en paralaje (3 capas) con titileo, colores
+  según tipo espectral, destellos en cruz y nebulosa tenue que se desplaza con la nave

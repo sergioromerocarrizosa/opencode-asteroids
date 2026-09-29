@@ -29,6 +29,211 @@ const dist  = (a, b)   => Math.hypot(a.x - b.x, a.y - b.y);
 const rand  = (min, max) => min + Math.random() * (max - min);
 const randInt = (min, max) => Math.floor(rand(min, max + 1));
 
+// ── Fondo dinámico (espacio estrellado) ───────────────────────────────────────
+// Fondo realista: nebulosa muy lejana +3 capas de estrellas en paralaje.
+// Las estrellas derivan despacio y reaccionan a la velocidad de la nave, así el
+// fondo nunca está quieto y da sensación de desplazarse por el espacio.
+
+const SPECTRA = [
+  ['#a9c1ff', 0.10],  // azul (tipo O/B)
+  ['#cfd9ff', 0.16],  // azul-blanco (tipo A)
+  ['#ffffff', 0.30],  // blanco (tipo F)
+  ['#fff2d4', 0.22],  // amarillo (tipo G)
+  ['#ffd9a8', 0.16],  // naranja (tipo K)
+  ['#ff9d76', 0.06],  // rojo (tipo M)
+];
+
+// Colores según distribución espectral real (predominan las blanco-amarillas)
+function pickSpectrum() {
+  let r = Math.random();
+  for (const [color, w] of SPECTRA) {
+    r -= w;
+    if (r <= 0) return color;
+  }
+  return '#ffffff';
+}
+
+function hexToRgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
+// Halo de la estrella pre-renderizado por color: pintarlo con drawImage es
+// mucho más barato que crear un degradado radial en cada frame.
+function makeGlowSprite(color) {
+  const S = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grad.addColorStop(0,    hexToRgba(color, 0.85));
+  grad.addColorStop(0.14, hexToRgba(color, 0.32));
+  grad.addColorStop(0.38, hexToRgba(color, 0.09));
+  grad.addColorStop(1,    hexToRgba(color, 0));
+  g.fillStyle = grad;
+  g.fillRect(0, 0, S, S);
+  return c;
+}
+
+// Capas: depth gobierna deriva y paralaje (las de atrás se mueven menos)
+const STAR_LAYERS = [
+  { depth: 0.30, count: 115, rMin: 0.35, rMax: 0.85, aMin: 0.22, aMax: 0.55, twinkle: 0.10 },
+  { depth: 0.60, count: 70,  rMin: 0.60, rMax: 1.30, aMin: 0.45, aMax: 0.85, twinkle: 0.18 },
+  { depth: 1.00, count: 34,  rMin: 1.00, rMax: 1.90, aMin: 0.70, aMax: 1.00, twinkle: 0.26 },
+];
+
+class Starfield {
+  constructor() {
+    this.t  = 0;
+    this.nx = 0;   // desplazamiento de la nebulosa
+    this.ny = 0;
+    this.drift = { x: -12, y: -5 };   // deriva base del campo (px/s a depth 1)
+
+    this.sprites = {};
+    for (const [color] of SPECTRA) this.sprites[color] = makeGlowSprite(color);
+
+    this.stars = [];
+    for (const layer of STAR_LAYERS) {
+      for (let i = 0; i < layer.count; i++) {
+        const star = {
+          x: rand(0, W),
+          y: rand(0, H),
+          depth: layer.depth,
+          r: rand(layer.rMin, layer.rMax),
+          alpha: rand(layer.aMin, layer.aMax),
+          color: pickSpectrum(),
+          // Titileo: velocidad y amplitud independientes por estrella
+          twSpeed: rand(0.5, 1.8),
+          twAmp: layer.twinkle * rand(0.5, 1.4),
+          phase: rand(0, Math.PI * 2),
+        };
+        // Las más brillantes lucen destellos en cruz (como en fotos reales)
+        star.spike = star.r >= 1.35 && Math.random() < 0.6;
+        this.stars.push(star);
+      }
+    }
+
+    // Fondo: negro azulado con viñeta, más realista que negro puro
+    const bg = ctx.createRadialGradient(W * 0.5, H * 0.38, 60, W * 0.5, H * 0.38, H);
+    bg.addColorStop(0,    '#070c1a');
+    bg.addColorStop(0.55, '#03050f');
+    bg.addColorStop(1,    '#000105');
+    this.bg = bg;
+
+    this.nebula = this.renderNebula();
+  }
+
+  // Nubes de gas muy tenues, pre-renderizadas y con costuras invisibles:
+  // cada mancha se pinta también en las posiciones ±W/±H para que al envolver
+  // el desplazamiento no se note el corte.
+  renderNebula() {
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const g = c.getContext('2d');
+
+    const patch = (x, y, r, rgb, max) => {
+      for (const dx of [-W, 0, W]) {
+        for (const dy of [-H, 0, H]) {
+          const grad = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+          grad.addColorStop(0,    `rgba(${rgb}, ${max})`);
+          grad.addColorStop(0.45, `rgba(${rgb}, ${max * 0.38})`);
+          grad.addColorStop(1,    `rgba(${rgb}, 0)`);
+          g.fillStyle = grad;
+          g.fillRect(0, 0, W, H);
+        }
+      }
+    };
+
+    patch(W * 0.22, H * 0.28, 330, '56, 44, 120', 0.22);   // índigo
+    patch(W * 0.76, H * 0.74, 300, '20, 76, 100', 0.17);   // cian profundo
+    patch(W * 0.58, H * 0.16, 250, '108, 44, 86', 0.13);   // magenta tenue
+    patch(W * 0.10, H * 0.88, 270, '38, 52, 116', 0.15);   // azul de fondo
+    return c;
+  }
+
+  update(dt) {
+    this.t += dt;
+
+    // La nave "arrastra" la mirada: al acelerar, las estrellas se retrasan
+    // (paralaje). Capas lejanas se mueven menos que las cercanas.
+    // Si la nave está muerta no hay paralaje: la velocidad quedó congelada.
+    const pvx = ship.dead ? 0 : -ship.vx * 0.07;
+    const pvy = ship.dead ? 0 : -ship.vy * 0.07;
+
+    for (const s of this.stars) {
+      s.x = wrap(s.x + (this.drift.x * s.depth + pvx * s.depth) * dt, W);
+      s.y = wrap(s.y + (this.drift.y * s.depth + pvy * s.depth) * dt, H);
+    }
+
+    // La nebulosa está mucho más lejos: apenas se mueve
+    this.nx = wrap(this.nx + (this.drift.x * 0.15 + pvx * 0.15) * dt, W);
+    this.ny = wrap(this.ny + (this.drift.y * 0.15 + pvy * 0.15) * dt, H);
+  }
+
+  drawStar(s, dx, dy) {
+    const x = s.x + dx;
+    const y = s.y + dy;
+
+    // Titileo (scintilación): nunca apaga del todo la estrella
+    const k = 1 - s.twAmp * (0.5 + 0.5 * Math.sin(this.t * s.twSpeed + s.phase));
+    const r = s.r * (0.92 + 0.08 * k);
+
+    // Halo
+    const size = s.r * 9;
+    ctx.globalAlpha = Math.min(1, s.alpha * k * 0.9);
+    ctx.drawImage(this.sprites[s.color], x - size / 2, y - size / 2, size, size);
+
+    // Núcleo
+    ctx.globalAlpha = Math.min(1, s.alpha * k);
+    ctx.fillStyle = s.color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Destellos en cruz de las estrellas más brillantes
+    if (s.spike) {
+      const L = s.r * 6;
+      ctx.globalAlpha = s.alpha * k * 0.4;
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(x - L, y);
+      ctx.lineTo(x + L, y);
+      ctx.moveTo(x, y - L);
+      ctx.lineTo(x, y + L);
+      ctx.stroke();
+    }
+  }
+
+  draw() {
+    ctx.fillStyle = this.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Nebulosa envolvente (4 copias para cubrir los bordes al desplazarse)
+    ctx.drawImage(this.nebula, -this.nx,        -this.ny);
+    ctx.drawImage(this.nebula,  W - this.nx,    -this.ny);
+    ctx.drawImage(this.nebula, -this.nx,        H - this.ny);
+    ctx.drawImage(this.nebula,  W - this.nx,    H - this.ny);
+
+    // Estrellas cerca de un borde se pintan también en el opuesto, para que
+    // el halo y los destellos no se corten al envolver
+    const PAD = 24;
+    for (const s of this.stars) {
+      const xs = [0];
+      const ys = [0];
+      if (s.x < PAD) xs.push(W); else if (s.x > W - PAD) xs.push(-W);
+      if (s.y < PAD) ys.push(H); else if (s.y > H - PAD) ys.push(-H);
+      for (const dx of xs)
+        for (const dy of ys)
+          this.drawStar(s, dx, dy);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+const starfield = new Starfield();
+
 // ── Bullet ────────────────────────────────────────────────────────────────────
 class Bullet {
   constructor(x, y, angle) {
@@ -424,6 +629,9 @@ function killShip() {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
+  // El fondo se mueve siempre, también al morir o en el game over
+  starfield.update(dt);
+
   if (state === 'gameover') {
     if (pressed('Space')) initGame();
     particles.forEach(p => p.update(dt));
@@ -572,8 +780,7 @@ function drawOverlay(title, sub) {
 }
 
 function draw() {
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
+  starfield.draw();
 
   particles.forEach(p => p.draw());
   asteroids.forEach(a => a.draw());
