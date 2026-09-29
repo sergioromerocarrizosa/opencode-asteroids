@@ -62,6 +62,13 @@ const RADII  = [0, 16, 30, 50];   // por tamaño 1, 2, 3
 const SPEEDS = [0, 85, 55, 32];   // velocidad base por tamaño
 const POINTS = [0, 100, 50, 20];  // puntos por tamaño
 
+// Paletas rocosas tipo planeta (luz, medio, sombra)
+const ASTEROID_PALETTES = [
+  ['#a89684', '#6b5a49', '#332920'], // marrón rocoso
+  ['#9a9aa0', '#61616a', '#2c2c32'], // gris ceniza / luna
+  ['#af8a63', '#7a5636', '#3c2618'], // óxido / marte
+];
+
 class Asteroid {
   constructor(x, y, size = 3) {
     this.x    = x;
@@ -77,13 +84,28 @@ class Asteroid {
     this.rotSpeed = rand(-1.2, 1.2);
     this.rot = rand(0, Math.PI * 2);
 
-    // Polígono irregular
-    const n = randInt(8, 13);
+    // Silueta rocosa (más redondeada que antes para leer bien el relieve)
+    const n = randInt(10, 15);
     this.verts = [];
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2;
-      const r = this.radius * rand(0.6, 1.0);
+      const r = this.radius * rand(0.82, 1.0);
       this.verts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+
+    this.palette = ASTEROID_PALETTES[randInt(0, ASTEROID_PALETTES.length - 1)];
+
+    // Cráteres: posición, radio dentro del disco
+    const craterCount = size === 3 ? randInt(4, 6) : size === 2 ? randInt(2, 4) : randInt(1, 2);
+    this.craters = [];
+    for (let i = 0; i < craterCount; i++) {
+      const ca = rand(0, Math.PI * 2);
+      const cd = rand(0, this.radius * 0.55);
+      this.craters.push({
+        x: Math.cos(ca) * cd,
+        y: Math.sin(ca) * cd,
+        r: this.radius * rand(0.14, 0.32),
+      });
     }
   }
 
@@ -104,16 +126,65 @@ class Asteroid {
   draw() {
     ctx.save();
     ctx.translate(this.x, this.y);
-    ctx.rotate(this.rot);
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth   = 1.5;
-    ctx.lineJoin    = 'round';
+
+    const [light, mid, dark] = this.palette;
+
+    // Rotamos los puntos a mano (no ctx.rotate) para que la iluminación
+    // quede fija en pantalla y el relieve se lea como una esfera real.
+    const cos = Math.cos(this.rot), sin = Math.sin(this.rot);
+    const pts = this.verts.map(([vx, vy]) => [vx * cos - vy * sin, vx * sin + vy * cos]);
+
     ctx.beginPath();
-    ctx.moveTo(this.verts[0][0], this.verts[0][1]);
-    for (let i = 1; i < this.verts.length; i++)
-      ctx.lineTo(this.verts[i][0], this.verts[i][1]);
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.closePath();
+
+    // Sombreado esférico: luz arriba-izquierda, oscurece hacia el borde
+    const lightOffset = -this.radius * 0.35;
+    const grad = ctx.createRadialGradient(
+      lightOffset, lightOffset, this.radius * 0.1,
+      0, 0, this.radius * 1.05
+    );
+    grad.addColorStop(0, light);
+    grad.addColorStop(0.55, mid);
+    grad.addColorStop(1, dark);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = dark;
+    ctx.lineWidth = 1.2;
     ctx.stroke();
+
+    // Recorta para que los cráteres no se salgan de la silueta
+    ctx.clip();
+
+    for (const c of this.craters) {
+      const cx = c.x * cos - c.y * sin;
+      const cy = c.x * sin + c.y * cos;
+      const cr = c.r;
+
+      const craterGrad = ctx.createRadialGradient(
+        cx - cr * 0.25, cy - cr * 0.25, cr * 0.1,
+        cx, cy, cr
+      );
+      craterGrad.addColorStop(0, dark);
+      craterGrad.addColorStop(1, mid);
+      ctx.fillStyle = craterGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Borde iluminado del cráter (rim light), lado opuesto a la sombra
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = light;
+      ctx.lineWidth = Math.max(1, cr * 0.18);
+      ctx.beginPath();
+      ctx.arc(cx + cr * 0.15, cy + cr * 0.15, cr * 0.85, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     ctx.restore();
   }
 }
