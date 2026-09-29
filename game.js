@@ -235,16 +235,22 @@ class Starfield {
 const starfield = new Starfield();
 
 // ── Bullet ────────────────────────────────────────────────────────────────────
+// Parametrizada por la skin activa: velocidad, vida, radio, daño y forma del
+// proyectil vienen en el `spec` de la skin (SKINS[i].bullet). La forma define
+// la estética; velocidad y daño el comportamiento.
 class Bullet {
-  constructor(x, y, angle) {
+  constructor(x, y, angle, spec) {
     this.x = x;
     this.y = y;
-    const SPEED = 520;
-    this.vx = Math.cos(angle) * SPEED;
-    this.vy = Math.sin(angle) * SPEED;
-    this.ttl  = 1.1;
-    this.radius = 2;
-    this.dead = false;
+    this.vx = Math.cos(angle) * spec.speed;
+    this.vy = Math.sin(angle) * spec.speed;
+    this.ttl    = spec.ttl;
+    this.radius = spec.radius;
+    this.damage = spec.damage;
+    this.color  = spec.color;
+    this.shape  = spec.shape;
+    this.angle  = angle;
+    this.dead   = false;
   }
 
   update(dt) {
@@ -255,10 +261,108 @@ class Bullet {
   }
 
   draw() {
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+
+    switch (this.shape) {
+      // Dardo afilado: rombo estirado en la dirección de vuelo
+      case 'dart': {
+        const r = this.radius;
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.moveTo(r * 3, 0);
+        ctx.lineTo(-r, -r);
+        ctx.lineTo(-r * 2, 0);
+        ctx.lineTo(-r, r);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.beginPath();
+        ctx.arc(r * 0.6, 0, r * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+
+      // Cápsula: trazo de extremos redondeados con núcleo brillante
+      case 'capsule': {
+        const r = this.radius;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = r * 2;
+        ctx.beginPath();
+        ctx.moveTo(-r * 1.5, 0);
+        ctx.lineTo(r * 2, 0);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = Math.max(1, r * 0.6);
+        ctx.beginPath();
+        ctx.moveTo(-r, 0);
+        ctx.lineTo(r * 1.6, 0);
+        ctx.stroke();
+        break;
+      }
+
+      // Bolt grueso: halo ancho + trazo sólido + línea central
+      case 'bolt': {
+        const r = this.radius;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = hexToRgba(this.color, 0.3);
+        ctx.lineWidth = r * 2;
+        ctx.beginPath();
+        ctx.moveTo(-r * 2, 0);
+        ctx.lineTo(r * 3, 0);
+        ctx.stroke();
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = r;
+        ctx.beginPath();
+        ctx.moveTo(-r * 2, 0);
+        ctx.lineTo(r * 3, 0);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = Math.max(1, r * 0.35);
+        ctx.beginPath();
+        ctx.moveTo(-r, 0);
+        ctx.lineTo(r * 2.2, 0);
+        ctx.stroke();
+        break;
+      }
+
+      // Plasma: orbe grande con halo y anillo de energía
+      case 'plasma': {
+        const r = this.radius;
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 2.4);
+        grad.addColorStop(0,    '#ffffff');
+        grad.addColorStop(0.3,  this.color);
+        grad.addColorStop(0.7,  hexToRgba(this.color, 0.55));
+        grad.addColorStop(1,    hexToRgba(this.color, 0));
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.85, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      }
+
+      // Orbe (por defecto): núcleo blanco con halo suave
+      default: {
+        const r = this.radius;
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 2);
+        grad.addColorStop(0,    '#ffffff');
+        grad.addColorStop(0.45, this.color);
+        grad.addColorStop(1,    hexToRgba(this.color, 0));
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
   }
 }
 
@@ -266,6 +370,7 @@ class Bullet {
 const RADII  = [0, 16, 30, 50];   // por tamaño 1, 2, 3
 const SPEEDS = [0, 85, 55, 32];   // velocidad base por tamaño
 const POINTS = [0, 100, 50, 20];  // puntos por tamaño
+const HP     = [0, 1, 1, 2];      // vida por tamaño: solo el grande aguanta 2 golpes
 
 // Paletas rocosas tipo planeta (luz, medio, sombra)
 const ASTEROID_PALETTES = [
@@ -280,6 +385,8 @@ class Asteroid {
     this.y    = y;
     this.size = size;
     this.radius = RADII[size];
+    this.hp = HP[size];
+    this.flash = 0;   // destello de feedback al recibir daño no letal
     this.dead = false;
 
     const angle = rand(0, Math.PI * 2);
@@ -318,6 +425,7 @@ class Asteroid {
     this.x   = wrap(this.x + this.vx * dt, W);
     this.y   = wrap(this.y + this.vy * dt, H);
     this.rot += this.rotSpeed * dt;
+    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt);
   }
 
   split() {
@@ -360,6 +468,14 @@ class Asteroid {
     ctx.strokeStyle = dark;
     ctx.lineWidth = 1.2;
     ctx.stroke();
+
+    // Impacto no letal: destello blanco breve (feedback del daño de la bala)
+    if (this.flash > 0) {
+      ctx.globalAlpha = Math.min(1, this.flash / 0.12) * 0.6;
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
 
     // Recorta para que los cráteres no se salgan de la silueta
     ctx.clip();
@@ -444,6 +560,84 @@ class ShootingStar {
   }
 }
 
+// ── Skins de la nave ──────────────────────────────────────────────────────────
+// 5 skins intercambiables en caliente con la tecla K (ciclan 1→2→3→4→5→1).
+// Cada skin define: silueta (polígono, nariz en +X), hueco de escape, paleta
+// 3D con luz arriba-izquierda (misma dirección que los asteroides) y
+// proyectil propio que difiere en estética Y comportamiento (velocidad/daño).
+const SKINS = [
+  {
+    // 1 · CLÁSICA: la flecha con muesca original, ahora con volumen y sombra
+    name: 'CLÁSICA',
+    points: [[20, 0], [-12, -9], [-7, 0], [-12, 9]],
+    exhaust: 7,
+    colors: { light: '#e9f2ff', mid: '#7fa3dd', dark: '#26375f', accent: '#ffffff' },
+    bullet: { speed: 520, ttl: 1.1, radius: 3, damage: 2, color: '#dff0ff', shape: 'orb' },
+  },
+  {
+    // 2 · LANCERO: lanza fina y alargada. Disparo rápido y débil.
+    name: 'LANCERO',
+    points: [[27, 0], [-12, -4], [-16, 0], [-12, 4]],
+    exhaust: 15,
+    colors: { light: '#d6fbff', mid: '#49c6e0', dark: '#0f4a63', accent: '#aef4ff' },
+    bullet: { speed: 680, ttl: 0.85, radius: 2, damage: 1, color: '#9ef2ff', shape: 'dart' },
+  },
+  {
+    // 3 · DISCO: casco redondo con nariz. Plasma lento y potente.
+    name: 'DISCO',
+    points: [[21, 0], [12, -9], [3, -13], [-7, -13], [-14, -7], [-15, 0],
+             [-14, 7], [-7, 13], [3, 13], [12, 9]],
+    exhaust: 14,
+    colors: { light: '#ffe0f5', mid: '#c86ad1', dark: '#4c1a5e', accent: '#ff9dee' },
+    bullet: { speed: 460, ttl: 1.25, radius: 4.5, damage: 2, color: '#ff8fe0', shape: 'plasma' },
+  },
+  {
+    // 4 · MURCIÉLAGO: alas en barrido con puntas y cola. Disparo rápido y débil.
+    name: 'MURCIÉLAGO',
+    points: [[19, 0], [2, -6], [-4, -14], [-8, -6], [-13, 0], [-8, 6], [-4, 14], [2, 6]],
+    exhaust: 12,
+    colors: { light: '#dcffe8', mid: '#5ad08a', dark: '#12512f', accent: '#9dffc4' },
+    bullet: { speed: 600, ttl: 0.95, radius: 2.5, damage: 1, color: '#a6ffbe', shape: 'capsule' },
+  },
+  {
+    // 5 · CRUCERO: casco robusto con colisillos laterales. Bolt lento y muy potente.
+    name: 'CRUCERO',
+    points: [[19, 0], [9, -5], [7, -13], [-3, -13], [-5, -6], [-15, -6],
+             [-15, 6], [-5, 6], [-3, 13], [7, 13], [9, 5]],
+    exhaust: 14,
+    colors: { light: '#ffeccc', mid: '#e0954a', dark: '#5e3212', accent: '#ffc178' },
+    bullet: { speed: 380, ttl: 1.5, radius: 5.5, damage: 2, color: '#ffb35c', shape: 'bolt' },
+  },
+];
+
+const SKIN_KEY = 'asteroids.skin';
+
+// Lee la última skin elegida. Fallback a 0 si el valor no es válido o si
+// localStorage no está disponible (modo privado, permisos, etc.).
+function loadSkin() {
+  try {
+    const v = parseInt(localStorage.getItem(SKIN_KEY), 10);
+    return Number.isInteger(v) && v >= 0 && v < SKINS.length ? v : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function saveSkin() {
+  try { localStorage.setItem(SKIN_KEY, String(skinIndex)); }
+  catch (e) { /* sin storage: la skin dura solo la sesión */ }
+}
+
+// Índice a nivel de módulo (no en Ship): sobrevive a reset(), nextLevel() e
+// initGame(), así la skin se mantiene al morir, al subir de nivel y al
+// empezar partida nueva tras el game over.
+let skinIndex = loadSkin();
+
+function cycleSkin() {
+  skinIndex = (skinIndex + 1) % SKINS.length;
+  saveSkin();
+}
+
 // ── Ship ──────────────────────────────────────────────────────────────────────
 class Ship {
   constructor() { this.reset(); }
@@ -498,7 +692,7 @@ class Ship {
     const NOSE = 21;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
-    return [new Bullet(ox, oy, this.angle)];
+    return [new Bullet(ox, oy, this.angle, SKINS[skinIndex].bullet)];
   }
 
   draw() {
@@ -506,35 +700,70 @@ class Ship {
     // Parpadeo durante invencibilidad de reaparición
     if (this.invincible > 0 && Math.floor(this.invincible * 8) % 2 === 0) return;
 
+    const skin = SKINS[skinIndex];
+    const { light, mid, dark, accent } = skin.colors;
+    const boosting = this.velocityTime > 0;
+
     ctx.save();
     ctx.translate(this.x, this.y);
-    ctx.rotate(this.angle);
-    // Velocity activo: la nave se pinta en cian
-    const boosting = this.velocityTime > 0;
-    ctx.strokeStyle = boosting ? '#4dd8ff' : '#fff';
+
+    // Rotamos la silueta a mano (patrón Asteroid, sin ctx.rotate) para que el
+    // degradado y la sombra queden fijos en pantalla: la luz siempre viene de
+    // arriba-izquierda (igual que en los asteroides) al girar la nave.
+    const cos = Math.cos(this.angle), sin = Math.sin(this.angle);
+    const pts = skin.points.map(([px, py]) => [px * cos - py * sin, px * sin + py * cos]);
+
+    let radius = 0;
+    for (const [px, py] of skin.points) radius = Math.max(radius, Math.hypot(px, py));
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+
+    // Sombra proyectada: cae abajo-derecha, opuesta a la luz arriba-izquierda
+    ctx.shadowColor   = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowOffsetX = 4;
+    ctx.shadowOffsetY = 4;
+    ctx.shadowBlur    = 3;
+
+    // Cuerpo con volumen 3D: degradado radial desplazado hacia la luz
+    const grad = ctx.createRadialGradient(
+      -radius * 0.3, -radius * 0.3, radius * 0.1,
+      0, 0, radius * 1.15
+    );
+    grad.addColorStop(0, light);
+    grad.addColorStop(0.5, mid);
+    grad.addColorStop(1, dark);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Contorno con el acento de la skin (cian con Velocity, como antes)
+    ctx.shadowColor   = 'rgba(0, 0, 0, 0)';
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.shadowBlur    = 0;
+    ctx.strokeStyle = boosting ? '#4dd8ff' : accent;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
-
-    // Silueta clásica: triángulo con muesca trasera
-    ctx.beginPath();
-    ctx.moveTo( 20,  0);   // nariz
-    ctx.lineTo(-12, -9);   // ala izquierda
-    ctx.lineTo( -7,  0);   // muesca trasera
-    ctx.lineTo(-12,  9);   // ala derecha
-    ctx.closePath();
     ctx.stroke();
 
-    // Llama del propulsor
-    if (this.thrusting && Math.random() > 0.35) {
-      ctx.beginPath();
-      ctx.moveTo(-8, -4);
-      ctx.lineTo(-8 - rand(6, 14), 0);
-      ctx.lineTo(-8,  4);
-      ctx.strokeStyle = boosting ? 'rgba(80, 220, 255, 0.9)' : 'rgba(255, 130, 0, 0.85)';
-      ctx.stroke();
-    }
-
     ctx.restore();
+
+    // Llama del propulsor en el hueco trasero de la skin activa
+    if (this.thrusting && Math.random() > 0.35) {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.angle);
+      ctx.beginPath();
+      ctx.moveTo(-skin.exhaust, -4);
+      ctx.lineTo(-skin.exhaust - rand(6, 14), 0);
+      ctx.lineTo(-skin.exhaust,  4);
+      ctx.strokeStyle = boosting ? 'rgba(80, 220, 255, 0.9)' : 'rgba(255, 130, 0, 0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 }
 
@@ -632,6 +861,11 @@ function update(dt) {
   // El fondo se mueve siempre, también al morir o en el game over
   starfield.update(dt);
 
+  // Cambiar de skin con K: en el inicio de update() funciona en cualquier
+  // estado y evita que una pulsación hecha durante la muerte quede colgada
+  // y dispare al reaparecer.
+  if (pressed('KeyK')) cycleSkin();
+
   if (state === 'gameover') {
     if (pressed('Space')) initGame();
     particles.forEach(p => p.update(dt));
@@ -675,16 +909,21 @@ function update(dt) {
   particles = particles.filter(p => !p.dead);
   shootingStars = shootingStars.filter(s => !s.dead);
 
-  // Bala vs asteroide
+  // Bala vs asteroide (el daño depende de la skin que dispare)
   const newAsteroids = [];
   for (const b of bullets) {
     for (const a of asteroids) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
-        a.dead = true;
-        score += POINTS[a.size];
-        explode(a.x, a.y, a.size * 5);
-        newAsteroids.push(...a.split());
+        a.hp -= b.damage;
+        if (a.hp > 0) {
+          a.flash = 0.12;   // impacto no letal: destello de feedback
+        } else {
+          a.dead = true;
+          score += POINTS[a.size];
+          explode(a.x, a.y, a.size * 5);
+          newAsteroids.push(...a.split());
+        }
       }
     }
   }
@@ -767,6 +1006,11 @@ function drawHUD() {
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
 
+  // Skin activa (indicador discreto para el test manual)
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = '12px monospace';
+  ctx.fillText(`SKIN ${skinIndex + 1}/${SKINS.length}`, 14, H - 14);
 }
 
 function drawOverlay(title, sub) {
