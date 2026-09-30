@@ -1,0 +1,52 @@
+# Se ejecuta cada vez que se abre un issue:
+# aplica el label «triage» y lo asigna al responsable del repo.
+name: Triage de issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  triage:
+    name: Aplicar label y asignar
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aplicar label «triage» y asignar responsable
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const LABEL = 'triage';
+            const ASSIGNEE = 'sergioromerocarrizosa';
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.issue.number;
+
+            // El label tiene que existir en el repo; si falta, lo creamos.
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: LABEL });
+            } catch (e) {
+              if (e.status !== 404) throw e;
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: LABEL,
+                color: '5319e7',
+                description: 'Pendiente de revisión y asignación',
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number,
+              labels: [LABEL],
+            });
+
+            await github.rest.issues.addAssignees({
+              owner,
+              repo,
+              issue_number,
+              assignees: [ASSIGNEE],
+            });

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // ── Config de CI ───────────────────────────────────────────────
+  // La usa el workflow .github/workflows/opencode.yml cuando escribes
+  // "/oc" en un comentario de GitHub. El runner auto-hospedado corre en
+  // esta misma máquina, por eso LiteLLM se ve en 127.0.0.1:4000 (desde un
+  // runner de GitHub hospedado esto NO funcionaría).
+  //
+  // La API key no vive aquí: llega por variable de entorno con el secret
+  // del repo `LITELLM_API_KEY`. Si no está definida, queda como cadena
+  // vacía y las llamadas fallarán (el workflow lo detecta antes).
+  //
+  // El proveedor se llama "litellm-ci" y no "litellm" a propósito: así no
+  // pisa el proveedor "litellm" de tu config global (los archivos de
+  // config se fusionan, pero un id distinto evita cualquier conflicto).
+  //
+  // Para cambiar de modelo solo toca `model:` en el workflow.
+  "provider": {
+    "litellm-ci": {
+      "name": "LiteLLM Proxy (CI)",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:4000/v1",
+        "apiKey": "{env:LITELLM_API_KEY}"
+      },
+      "models": {
+        // Local vía LM Studio: gratis y privado, es el que usa el workflow.
+        "qwen3.8-27b": {
+          "name": "Qwen 3.8 27B (local vía LiteLLM)",
+          "tool_call": true,
+          "reasoning": false,
+          "limit": { "context": 32768, "output": 4096 }
+        },
+        "qwen3-coder-30b": {
+          "name": "Qwen 3 Coder 30B (local vía LiteLLM)",
+          "tool_call": true,
+          "reasoning": false,
+          "limit": { "context": 32768, "output": 4096 }
+        },
+        // Router de LiteLLM: mejor disponible con fallback automático.
+        "smart": {
+          "name": "Smart Router (LiteLLM con fallback)",
+          "tool_call": true,
+          "reasoning": true,
+          "limit": { "context": 200000, "output": 8192 }
+        },
+        // ⚠️ Los de abajo pasan por CliGate y consumen la cuota de tus
+        // suscripciones (Claude Pro / Antigravity / Codex). Actívalos
+        // cambiando `model:` en el workflow solo si lo quieres.
+        "claude-sonnet-5.5": {
+          "name": "Claude Sonnet 5.5 (Claude Pro vía CliGate)",
+          "tool_call": true,
+          "reasoning": true,
+          "limit": { "context": 200000, "output": 8192 }
+        },
+        "gemini-3.8-flash-high": {
+          "name": "Gemini Flash 3.8 High (Antigravity vía CliGate)",
+          "tool_call": true,
+          "reasoning": true,
+          "limit": { "context": 1048576, "output": 65536 }
+        }
+      }
+    }
+  }
+}
