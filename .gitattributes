@@ -1,0 +1,5 @@
+# Normaliza los finales de línea: el contenido se guarda siempre con LF
+# en el repo, sin importar el sistema. Sin esto, los commits que hace el
+# workflow de OpenCode desde Windows reescriben todos los ficheros
+# (CRLF vs LF) y el PR sale con TODO el repo cambiado.
+* text=auto
